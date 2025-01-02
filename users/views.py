@@ -137,26 +137,57 @@ def get_sports(request):
     return JsonResponse(list(sports), safe=False)
 
 
+def create_or_update_sport_profile(user, sport):
+    try:
+        # Attempt to get or create the SportProfile instance
+        sport_profile, created = SportProfile.objects.get_or_create(USER_ID=user, SPORT_ID=sport)
+        # Log whether the profile was created or updated
+        action = "created" if created else "updated"
+        print(f"SportProfile for {user.username} and {sport.SPORT_NAME} was {action}")
+        return sport_profile, created
+    except Exception as e:
+        print(f"Error creating/updating SportProfile: {e}")
+        return None, False
 
+    
 @csrf_exempt
 def update_user_sport(request):
     if request.method == 'POST':
         try:
+            # Parse the incoming request body
             data = json.loads(request.body)
-            user_id = data.get('user_id')
-            sport_name = data.get('sport_name')
+            user_id = data.get('user_id')  # This should now be '114'
+            sport_id = data.get('sport_id')
 
+            # Log to confirm the correct data is received
+            print(f"Received user_id: {user_id}, sport_id: {sport_id}")
+
+            # Check if user_id and sport_id are provided
+            if not user_id or not sport_id:
+                return JsonResponse({'error': 'User ID and Sport ID are required'}, status=400)
+
+            # Retrieve the user and sport from the database
             user = User.objects.get(id=user_id)
-            profile = Profile.objects.get(user=user)
-            
-            sport = Sport.objects.get(SPORT_NAME=sport_name)
-            profile.sports.add(sport)
-            profile.save()
+            sport = Sport.objects.get(id=sport_id)
 
-            return JsonResponse({'message': 'Sport added successfully'}, status=200)
+            # Create or update the SportProfile instance using the utility
+            sport_profile, created = create_or_update_sport_profile(user, sport)
+
+            if sport_profile is None:
+                return JsonResponse({'error': 'Failed to create or update SportProfile'}, status=500)
+
+            # Respond with success message
+            message = 'Sport profile created successfully' if created else 'Sport profile updated successfully'
+            return JsonResponse({'message': message}, status=200)
+
+        except User.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+        except Sport.DoesNotExist:
+            return JsonResponse({'error': 'Sport not found'}, status=404)
         except Exception as e:
-            return JsonResponse({'error': str(e)}, status=400)
-    return JsonResponse({'error': 'Invalid request method'}, status=400)
+            # Catch any other errors and return an appropriate response
+            return JsonResponse({'error': str(e)}, status=500)
+
 
 
 
@@ -282,6 +313,13 @@ def fetch_account_details(request):
             user = User.objects.get(id=user_id)
             profile = Profile.objects.get(user=user)
 
+            
+            # Add these debug prints
+            print(f"User: {user.username}")
+            print(f"Profile sports: {profile.sports.all()}")
+            sport_profiles = SportProfile.objects.filter(USER_ID=user)
+            print(f"Sport profiles: {sport_profiles}")
+            
             account_details = {
                 'username': user.username,
                 'email': user.email,
@@ -296,9 +334,13 @@ def fetch_account_details(request):
                 'phone': profile.PHONE,
                 'role': profile.role,
                 'image_url': request.build_absolute_uri(profile.image.url) if profile.image else None,
-                'sports': [sport.SPORT_ID.SPORT_NAME for sport in profile.sports.all()],
-                'has_selected_sport': profile.sports.exists(),
+                'sports': [sp.SPORT_ID.SPORT_NAME for sp in SportProfile.objects.filter(USER_ID=user)],
+                
             }
+            
+            # Print the final sports data
+            print(f"Sports being sent: {account_details['sports']}")
+            
             return JsonResponse({'account_details': account_details}, status=200)
         except ObjectDoesNotExist:
             logger.error(f"User or Profile not found for user_id: {user_id}")
@@ -307,6 +349,8 @@ def fetch_account_details(request):
             logger.error(f"Error fetching account details: {e}")
             return JsonResponse({'error': str(e)}, status=400)
     return JsonResponse({'error': 'Invalid request method'}, status=400)
+
+
 
 
 

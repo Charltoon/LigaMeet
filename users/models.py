@@ -51,7 +51,7 @@ class Profile(models.Model):
     role = models.CharField(max_length=50, choices=ROLE_CHOICES, blank=True, null=True)
     image = models.ImageField(default='user_default.png', upload_to='profile_pics')
     first_login = models.BooleanField(default=True)
-    sports = models.ManyToManyField(SportProfile, blank=True)
+    sports = models.ManyToManyField(SportProfile, blank=True, related_name='profiles')
     is_scout = models.BooleanField(default=False)
 
     # Sport-specific fields = Volleyball
