@@ -122,7 +122,8 @@ def login_user(request):
         print(f"User logged in successfully with role: {profile.role}")
         return JsonResponse({
             'message': 'User logged in successfully',
-            'role': profile.role
+            'role': profile.role,
+            'first_login': profile.first_login
         })
     
     return JsonResponse({'error': 'Invalid request method'}, status=400)
@@ -176,14 +177,21 @@ def update_user_sport(request):
             if sport_profile is None:
                 return JsonResponse({'error': 'Failed to create or update SportProfile'}, status=500)
 
+            # Update the first_login field
+            profile = Profile.objects.get(user=user)
+            profile.first_login = False
+            profile.save()
+
             # Respond with success message
             message = 'Sport profile created successfully' if created else 'Sport profile updated successfully'
-            return JsonResponse({'message': message}, status=200)
+            return JsonResponse({'message': message, 'first_login': profile.first_login}, status=200)
 
         except User.DoesNotExist:
             return JsonResponse({'error': 'User not found'}, status=404)
         except Sport.DoesNotExist:
             return JsonResponse({'error': 'Sport not found'}, status=404)
+        except Profile.DoesNotExist:
+            return JsonResponse({'error': 'Profile not found'}, status=404)
         except Exception as e:
             # Catch any other errors and return an appropriate response
             return JsonResponse({'error': str(e)}, status=500)
