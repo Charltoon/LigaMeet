@@ -4,8 +4,11 @@ from django.db import transaction
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from .forms import UserRegisterForm, UserUpdateForm, ProfileUpdateForm, PlayerForm, VolleyBallForm, BasketBallForm
-from .models import Profile, SportProfile
+
+from .models import User, Profile, SportProfile
 from ligameet.models import Sport, Event, Invitation
+
+
 from .forms import RoleSelectionForm
 from django.contrib.auth.models import User
 from django.contrib.auth.views import redirect_to_login
@@ -35,7 +38,8 @@ def register_user(request):
         password = body.get('password')
 
         # Check if user already exists
-        from .models import User, Profile
+        from .models import User, Profile, SportProfile
+        from ligameet.models import Sport
         if User.objects.filter(email=email).exists():
             print(f"User with email {email} already exists")
             return JsonResponse({'error': 'User with this email already exists'}, status=400)
@@ -61,31 +65,42 @@ def register_user(request):
                     is_superuser=False,
                     is_staff=False,
                     is_active=True,
-                    date_joined='2024-10-15T10:00:00Z',
+                    date_joined=timezone.now(),
                     last_login=None
                 )
                 print(f"User created with ID: {user.id}")
 
-                # Delete any existing profile for this user (shouldn't happen, but just in case)
+                # Safeguard: Remove any existing Profile
                 Profile.objects.filter(user_id=user.id).delete()
-                print(f"Cleaned up any existing profiles for user {user.id}")
 
-                # Create Profile with Player role
-                profile = Profile.objects.create(
+                # Create Profile with Player role (ensure no duplicates)
+                profile, created = Profile.objects.get_or_create(
                     user=user,
-                    role='Player'
+                    defaults={
+                        'role': 'Player'
+                    }
                 )
-                print(f"Profile created with ID: {profile.id} for user {user.username}")
+                if not created:
+                    print(f"Profile already exists for user {user.id}. Using existing profile.")
+                else:
+                    print(f"Profile created for user {user.id}.")
+
+                # Assign default sport to the user
+                default_sport = Sport.objects.filter(SPORT_NAME="BASKETBALL").first()
+                if default_sport:
+                    sport_profile = SportProfile.objects.create(USER_ID=user, SPORT_ID=default_sport)
+                    profile.sports.add(sport_profile)
+                    print(f"Assigned default sport {default_sport.SPORT_NAME} to user {user.username}")
 
             print(f"User {username} registered successfully with Player role")
-            return JsonResponse({'message': 'User registered successfully in Django'})
+            return JsonResponse({'message': 'User registered successfully in Django', 'user_id': user.id})
             
         except Exception as e:
             print(f"Error during registration: {str(e)}")
-            # If we get here, the transaction has been rolled back
             return JsonResponse({'error': f'Registration failed: {str(e)}'}, status=400)
 
     return JsonResponse({'error': 'Invalid request method'}, status=400)
+
 
 @csrf_exempt
 def login_user(request):
@@ -416,15 +431,22 @@ def fetch_teams(request):
             return JsonResponse({'error': 'user_id is required'}, status=400)
 
         try:
-            profile = Profile.objects.get(user_id=user_id)
-            sport_profiles = SportProfile.objects.filter(profile=profile)
+            # Fetch the Profile instance associated with the given user ID
+            profile = Profile.objects.get(user__id=user_id)
+
+            # Retrieve the sports associated with the profile
+            sport_profiles = profile.sports.all()
 
             if not sport_profiles.exists():
                 return JsonResponse({'teams': []}, status=200)
 
+            # Get the list of SPORT_IDs from SportProfile
             selected_sports = sport_profiles.values_list('SPORT_ID', flat=True)
+
+            # Fetch teams associated with these sports
             teams = Team.objects.filter(SPORT_ID__in=selected_sports).prefetch_related('teamparticipant_set', 'COACH_ID')
 
+            # Build response data
             teams_data = [
                 {
                     'id': team.id,
@@ -444,11 +466,14 @@ def fetch_teams(request):
             return JsonResponse({'teams': teams_data}, status=200)
 
         except Profile.DoesNotExist:
-            return JsonResponse({'error': 'User or Profile not found'}, status=404)
+            return JsonResponse({'error': 'Profile not found for the given user ID'}, status=404)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)
 
     return JsonResponse({'error': 'Invalid request method'}, status=400)
+
+
+
 
 
 
