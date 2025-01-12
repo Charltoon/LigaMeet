@@ -490,7 +490,7 @@ def join_team(request):
 
             # Check if a join request already exists
             if JoinRequest.objects.filter(USER_ID=user, TEAM_ID=team).exists():
-                return JsonResponse({'error': 'You already have a pending join request for this team.'}, status=400)
+                return JsonResponse({'error': 'You already joined request for this team.'}, status=400)
 
             # Create a new join request
             join_request = JoinRequest(USER_ID=user, TEAM_ID=team, STATUS='pending')
